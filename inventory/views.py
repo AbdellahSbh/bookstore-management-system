@@ -20,3 +20,9 @@ def get_authors(request):
     authors = Author.objects.all()
     data = serializers.serialize('json', authors)
     return JsonResponse(data, safe=False)
+
+def add_authors(request):
+    Name = request.GET.get('name', '')
+    Bio = request.GET.get('bio', '')
+    author = Author.create(name=Name, bio=Bio)
+    return JsonResponse({'name': author.name, 'bio': author.bio})
