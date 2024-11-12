@@ -26,3 +26,16 @@ def add_authors(request):
     Bio = request.GET.get('bio', '')
     author = Author.create(name=Name, bio=Bio)
     return JsonResponse({'name': author.name, 'bio': author.bio})
+
+def add_books(request):
+        Title = request.GET.get('title', '')
+        Authors = request.GET.get('authors','')
+        Price = request.GET.get('price','')
+        Stock_quantity = request.GET.get('stock','')
+        author_names = [author_name.strip() for author_name in Authors.split(',')] if Authors else[]
+        author_objects = Author.objects.filter(name__in=author_names)
+        if len(author_objects) != len(author_names):
+                return JsonResponse({'error': 'Author not found.'}, status=404)
+        book = Book.create(title=Title, price=Price, stock_quantity=Stock_quantity)
+        book.authors.set(author_objects)
+        return JsonResponse({'title': book.title, 'authors': [author.name for author in book.authors.all()], 'price': book.price, 'stock': book.stock_quantity})
