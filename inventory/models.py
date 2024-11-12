@@ -37,3 +37,9 @@ class Book(models.Model):
     def __str__(self):
 
         return self.title
+
+    @classmethod
+    def create(cls, title, price, stock_quantity):
+        book = cls(title=title, price=price, stock_quantity=stock_quantity)
+        book.save()
+        return book
