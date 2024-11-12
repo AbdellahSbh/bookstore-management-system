@@ -14,6 +14,12 @@ class Author(models.Model):
 
         return self.name
 
+    @classmethod
+    def create(cls, name, bio):
+        author = cls(name=name, bio=bio)
+        author.save()
+        return author
+
 
 
 class Book(models.Model):
