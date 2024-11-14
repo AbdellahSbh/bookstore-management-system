@@ -39,3 +39,33 @@ def add_books(request):
         book = Book.create(title=Title, price=Price, stock_quantity=Stock_quantity)
         book.authors.set(author_objects)
         return JsonResponse({'title': book.title, 'authors': [author.name for author in book.authors.all()], 'price': book.price, 'stock': book.stock_quantity})
+def delete_book(request):
+    Title = request.GET.get('title', '')
+    if not Title:
+        return JsonResponse({"error": "Book title is required to delete the book."}, status=400)
+    book = get_object_or_404(Book, title=Title)
+    book.delete() 
+    return JsonResponse({"message": f"Book '{Title}' deleted successfully!"}, status=200)
+def update_book(request):
+    Title = request.GET.get('title', '')
+    New_title = request.GET.get('new_title', '')
+    Price = request.GET.get('price', '')
+    Stock_quantity = request.GET.get('stock', '')
+    if not Title:
+        return JsonResponse({"error": "Current book title is required to identify the book."}, status=400)
+    book = get_object_or_404(Book, title=Title)
+    if New_title:
+        book.title = New_title
+    if Price:
+        book.price = Price
+    if Stock_quantity:
+        book.stock_quantity = Stock_quantity
+    book.save()
+    return JsonResponse({
+        "message": "Book updated successfully!",
+        "updated_fields": {
+            "title": book.title,
+            "price": book.price,
+            "stock_quantity": book.stock_quantity
+        }
+    }, status=200)
