@@ -8,16 +8,41 @@ from .models import Author
 
 
 # Create a view to return the entire inventory as JSON
-def get_inventory(request):
-    books = Book.objects.all()
-    data = serializers.serialize('json', books)
-    return JsonResponse(data, safe=False)
+def sort_inventory(request):
+    Title = request.GET.get('title', '')
+    Price = request.GET.get('price','')
+    if Price == 'Desc':
+        Descprice = serializers.serialize('json', Book.objects.order_by('-price'))
+        return JsonResponse(Descprice, safe=False)
+    if Price == 'Asc':
+        Ascprice = serializers.serialize('json', Book.objects.order_by('price'))
+        return JsonResponse(Ascprice, safe=False)
+    if Title == 'AtoZ':
+        atoz = serializers.serialize('json', Book.objects.order_by('title'))
+        return JsonResponse(atoz, safe=False)
+    if Title == 'ZtoA':
+        ztoa = serializers.serialize('json', Book.objects.order_by('-title'))
+        return JsonResponse(ztoa, safe=False)
+    if not Title:
+        if not Price:
+            books = serializers.serialize('json', Book.objects.all())
+            return JsonResponse(books, safe=False)
 
 def search_books(request):
-    query = request.GET.get('q', '')
-    books = Book.objects.filter(title__icontains=query)
-    data = serializers.serialize('json', books)
-    return JsonResponse(data, safe=False)
+    Author = request.GET.get('author','')
+    Title = request.GET.get('title', '')
+    Price = request.GET.get('price','')
+    if Author:
+        byauthor = serializers.serialize('json', Book.objects.filter(authors__name__icontains=Author))
+        return JsonResponse(byauthor, safe=False)
+    if Title:
+        bytitle = serializers.serialize('json', Book.objects.filter(title__icontains=Title))
+        return JsonResponse(bytitle, safe=False)
+    if Price:
+        byprice = serializers.serialize('json', Book.objects.filter(price=Price))
+        return JsonResponse(byprice, safe=False)
+
+
 def get_authors(request):
     authors = Author.objects.all()
     data = serializers.serialize('json', authors)
