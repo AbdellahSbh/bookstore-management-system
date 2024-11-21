@@ -29,19 +29,31 @@ def sort_inventory(request):
             return JsonResponse(books, safe=False)
 
 def search_books(request):
-    Author = request.GET.get('author','')
-    Title = request.GET.get('title', '')
-    Price = request.GET.get('price','')
-    if Author:
-        byauthor = serializers.serialize('json', Book.objects.filter(authors__name__icontains=Author))
-        return JsonResponse(byauthor, safe=False)
-    if Title:
-        bytitle = serializers.serialize('json', Book.objects.filter(title__icontains=Title))
-        return JsonResponse(bytitle, safe=False)
-    if Price:
-        byprice = serializers.serialize('json', Book.objects.filter(price=Price))
-        return JsonResponse(byprice, safe=False)
+    Author = request.GET.get('author', '').strip()
+    Title = request.GET.get('title', '').strip()
+    Price = request.GET.get('price', '').strip()
 
+    # Validate input
+    if not Author and not Title and not Price:
+        return JsonResponse({'error': 'At least one search parameter (author, title, or price) is required.'}, status=400)
+
+    books = Book.objects.all()
+    if Author:
+        books = books.filter(authors__name__icontains=Author)
+    if Title:
+        books = books.filter(title__icontains=Title)
+    if Price:
+        try:
+            Price = float(Price)
+            books = books.filter(price=Price)
+        except ValueError:
+            return JsonResponse({'error': 'Price must be a valid number.'}, status=400)
+
+    if not books.exists():
+        return JsonResponse({'error': 'No books found matching the criteria.'}, status=404)
+
+    data = serializers.serialize('json', books)
+    return JsonResponse(data, safe=False)
 
 def get_authors(request):
     authors = Author.objects.all()
@@ -75,52 +87,68 @@ def add_authors(request):
         return JsonResponse({"error": f"An error occurred: {str(e)}"}, status=500)
 
 def add_books(request):
-    title = request.GET.get('title', '')
-    author_ids = request.GET.get('authors', '')  
-    price = request.GET.get('price', '')
-    stock_quantity = request.GET.get('stock', '')
+    Title = request.GET.get('title', '').strip()
+    Authors = request.GET.get('authors', '').strip()
+    Price = request.GET.get('price', '').strip()
+    Stock_quantity = request.GET.get('stock', '').strip()
 
-    if not title or not author_ids or not price or not stock_quantity:
-        return JsonResponse({"error": "All fields (title, authors, price, stock) are required."}, status=400)
+    if not Title:
+        return JsonResponse({'error': 'Book title is required.'}, status=400)
+    if not Authors:
+        return JsonResponse({'error': 'At least one author is required.'}, status=400)
+    if not Price:
+        return JsonResponse({'error': 'Price is required.'}, status=400)
+    if not Stock_quantity:
+        return JsonResponse({'error': 'Stock quantity is required.'}, status=400)
 
     try:
-        author_ids = [int(id.strip()) for id in author_ids.split(',')]
+        Price = float(Price)
+        if Price <= 0:
+            return JsonResponse({'error': 'Price must be a positive number.'}, status=400)
     except ValueError:
-        return JsonResponse({"error": "Author IDs must be valid integers."}, status=400)
+        return JsonResponse({'error': 'Price must be a valid number.'}, status=400)
 
-    # Fetch authors
-    author_objects = Author.objects.filter(id__in=author_ids)
-    if len(author_objects) != len(author_ids):
-        return JsonResponse({"error": "One or more author IDs are invalid."}, status=404)
-
-    # Create the book
     try:
-        book = Book.objects.create(title=title, price=price, stock_quantity=stock_quantity)
-        book.authors.set(author_objects)  # Assign authors to the book
-        return JsonResponse({
-            "message": "Book added successfully!",
-            "book": {
-                "title": book.title,
-                "authors": [author.name for author in book.authors.all()],
-                "price": book.price,
-                "stock_quantity": book.stock_quantity,
-            }
-        }, status=201)
-    except Exception as e:
-        return JsonResponse({"error": f"An error occurred: {str(e)}"}, status=500)
+        Stock_quantity = int(Stock_quantity)
+        if Stock_quantity < 0:
+            return JsonResponse({'error': 'Stock quantity must be a non-negative integer.'}, status=400)
+    except ValueError:
+        return JsonResponse({'error': 'Stock quantity must be a valid integer.'}, status=400)
+
+    if Book.objects.filter(title=Title).exists():
+        return JsonResponse({'error': 'A book with this title already exists.'}, status=400)
+
+    author_names = [author_name.strip() for author_name in Authors.split(',')]
+    author_objects = Author.objects.filter(name__in=author_names)
+    if len(author_objects) != len(author_names):
+        return JsonResponse({'error': 'Some authors were not found.'}, status=404)
+
+    book = Book.objects.create(title=Title, price=Price, stock_quantity=Stock_quantity)
+    book.authors.set(author_objects)
+
+    return JsonResponse({
+        'message': 'Book added successfully!',
+        'book': {
+            'title': book.title,
+            'authors': [author.name for author in book.authors.all()],
+            'price': book.price,
+            'stock_quantity': book.stock_quantity,
+        }
+    }, status=201)
 
 def delete_book(request):
-    title = request.GET.get('title', '')
-    if not title:
-        return JsonResponse({"error": "Book title is required to delete the book."}, status=400)
-    
-    # Check if the book exists and delete it
-    book = Book.objects.filter(title=title).first()
-    if not book:
-        return JsonResponse({"error": f"Book with title '{title}' does not exist."}, status=404)
-    
+    Title = request.GET.get('title', '').strip()
+
+    if not Title:
+        return JsonResponse({'error': 'Book title is required to delete the book.'}, status=400)
+
+    try:
+        book = get_object_or_404(Book, title=Title)
+    except:
+        return JsonResponse({'error': 'No book found with the provided title.'}, status=404)
+
     book.delete()
-    return JsonResponse({"message": f"Book '{title}' deleted successfully!"}, status=200)
+    return JsonResponse({'message': f"Book '{Title}' deleted successfully!"}, status=200)
 def update_book(request):
     title = request.GET.get('title', '')
     new_title = request.GET.get('new_title', '')
