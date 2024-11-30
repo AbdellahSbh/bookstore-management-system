@@ -5,6 +5,7 @@ from django.shortcuts import get_object_or_404
 import json
 from .models import Book
 from .models import Author
+import requests
 
 
 # Create a view to return the entire inventory as JSON
@@ -29,31 +30,46 @@ def sort_inventory(request):
             return JsonResponse(books, safe=False)
 
 def search_books(request):
-    Author = request.GET.get('author', '').strip()
-    Title = request.GET.get('title', '').strip()
-    Price = request.GET.get('price', '').strip()
+    query_title = request.GET.get('title', '').strip()
+    query_author = request.GET.get('author', '').strip()
+    query_price = request.GET.get('price', '').strip()  
 
-    # Validate input
-    if not Author and not Title and not Price:
-        return JsonResponse({'error': 'At least one search parameter (author, title, or price) is required.'}, status=400)
+    if not query_title and not query_author:
+        return JsonResponse({'error': 'At least one search parameter (title or author) is required.'}, status=400)
 
-    books = Book.objects.all()
-    if Author:
-        books = books.filter(authors__name__icontains=Author)
-    if Title:
-        books = books.filter(title__icontains=Title)
-    if Price:
-        try:
-            Price = float(Price)
-            books = books.filter(price=Price)
-        except ValueError:
-            return JsonResponse({'error': 'Price must be a valid number.'}, status=400)
 
-    if not books.exists():
-        return JsonResponse({'error': 'No books found matching the criteria.'}, status=404)
+    api_url = "https://www.googleapis.com/books/v1/volumes"
+    params = {
+        'q': f"{'intitle:' + query_title if query_title else ''} {'inauthor:' + query_author if query_author else ''}",
+        'maxResults': 10  
+    }
 
-    data = serializers.serialize('json', books)
-    return JsonResponse(data, safe=False)
+    try:
+        response = requests.get(api_url, params=params)
+        response.raise_for_status()
+        data = response.json()
+
+        books = []
+        for item in data.get('items', []):
+            volume_info = item.get('volumeInfo', {})
+            books.append({
+                'title': volume_info.get('title'),
+                'authors': volume_info.get('authors', []),
+                'publisher': volume_info.get('publisher'),
+                'publishedDate': volume_info.get('publishedDate'),
+                'description': volume_info.get('description'),
+                'pageCount': volume_info.get('pageCount'),
+                'categories': volume_info.get('categories'),
+                'averageRating': volume_info.get('averageRating'),
+                'ratingsCount': volume_info.get('ratingsCount'),
+                'thumbnail': volume_info.get('imageLinks', {}).get('thumbnail'),
+                'infoLink': volume_info.get('infoLink'),
+            })
+
+        return JsonResponse({'books': books}, status=200)
+
+    except requests.exceptions.RequestException as e:
+        return JsonResponse({'error': f"Failed to fetch books: {str(e)}"}, status=500)
 
 def get_authors(request):
     authors = Author.objects.all()
@@ -149,6 +165,7 @@ def delete_book(request):
 
     book.delete()
     return JsonResponse({'message': f"Book '{Title}' deleted successfully!"}, status=200)
+
 def update_book(request):
     title = request.GET.get('title', '')
     new_title = request.GET.get('new_title', '')
@@ -183,3 +200,88 @@ def update_book(request):
             "stock_quantity": book.stock_quantity
         }
     }, status=200)
+
+def fetch_books_from_google(request):
+    query = request.GET.get('q', '').strip()  
+    if not query:
+        return JsonResponse({"error": "A search query is required."}, status=400)
+
+
+    api_url = f"https://www.googleapis.com/books/v1/volumes?q={query}"
+
+    try:
+        response = requests.get(api_url)
+        response.raise_for_status()  
+
+        data = response.json()
+        books = []
+
+        for item in data.get('items', []):
+            book_info = item.get('volumeInfo', {})
+            books.append({
+                "title": book_info.get('title', 'No Title'),
+                "authors": book_info.get('authors', ['Unknown Author']),
+                "published_date": book_info.get('publishedDate', 'Unknown Date'),
+                "description": book_info.get('description', 'No Description'),
+                "page_count": book_info.get('pageCount', 0),
+                "categories": book_info.get('categories', ['Uncategorized']),
+                "thumbnail": book_info.get('imageLinks', {}).get('thumbnail', None),
+            })
+
+        if not books:
+            return JsonResponse({"error": "No books found from Google Books API."}, status=404)
+
+        return JsonResponse(books, safe=False)
+
+    except requests.RequestException as e:
+        return JsonResponse({"error": f"Failed to fetch books from Google API: {str(e)}"}, status=500)
+
+def fetch_and_add_book(request):
+    title_query = request.GET.get('title', '').strip()
+
+    if not title_query:
+        return JsonResponse({'error': 'Book title is required.'}, status=400)
+
+
+    url = f'https://www.googleapis.com/books/v1/volumes?q=intitle:{title_query}'
+    response = requests.get(url)
+
+    if response.status_code != 200:
+        return JsonResponse({'error': 'Failed to fetch data from Google Books API.'}, status=500)
+
+    data = response.json()
+
+
+    if 'items' not in data or not data['items']:
+        return JsonResponse({'error': f'No books found for the title "{title_query}".'}, status=404)
+
+    book_data = data['items'][0]['volumeInfo']
+
+
+    title = book_data.get('title', 'Unknown Title')
+    authors = book_data.get('authors', [])
+    price = 0.0 
+    stock_quantity = 10  
+
+
+    if Book.objects.filter(title=title).exists():
+        return JsonResponse({'error': f"The book '{title}' already exists in the database."}, status=400)
+
+
+    author_objects = []
+    for author_name in authors:
+        author, _ = Author.objects.get_or_create(name=author_name)
+        author_objects.append(author)
+
+    book = Book.objects.create(title=title, price=price, stock_quantity=stock_quantity)
+    book.authors.set(author_objects)
+
+    return JsonResponse({
+        'message': 'Book added successfully from Google Books API!',
+        'book': {
+            'title': book.title,
+            'authors': [author.name for author in book.authors.all()],
+            'price': book.price,
+            'stock_quantity': book.stock_quantity,
+        }
+    }, status=201)
