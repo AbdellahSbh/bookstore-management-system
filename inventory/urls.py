@@ -9,4 +9,7 @@ urlpatterns = [
     path('addauthors/', views.add_authors, name='add_authors'),
     path('update_book/', views.update_book, name='update_book'),  
     path('delete_book/', views.delete_book, name='delete_book'),
+    path('fetch_google_books/', views.fetch_books_from_google, name='fetch_google_books'),
+    path('fetch_and_add_book/', views.fetch_and_add_book, name='fetch_and_add_book'),
+
 ]
