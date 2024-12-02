@@ -6,6 +6,8 @@ import json
 from .models import Book
 from .models import Author
 import requests
+from django.db import IntegrityError
+from time import sleep
 
 
 # Create a view to return the entire inventory as JSON
@@ -207,34 +209,42 @@ def fetch_books_from_google(request):
         return JsonResponse({"error": "A search query is required."}, status=400)
 
 
-    api_url = f"https://www.googleapis.com/books/v1/volumes?q={query}"
+    api_url = f"https://www.googleapis.com/books/v1/volumes?q={query}&maxResults=40"
+    books = []
 
-    try:
-        response = requests.get(api_url)
-        response.raise_for_status()  
+    while api_url:
 
-        data = response.json()
-        books = []
+        try:
+            response = requests.get(api_url)
+            response.raise_for_status()  
+            data = response.json()
+            
 
-        for item in data.get('items', []):
-            book_info = item.get('volumeInfo', {})
-            books.append({
-                "title": book_info.get('title', 'No Title'),
-                "authors": book_info.get('authors', ['Unknown Author']),
-                "published_date": book_info.get('publishedDate', 'Unknown Date'),
-                "description": book_info.get('description', 'No Description'),
-                "page_count": book_info.get('pageCount', 0),
-                "categories": book_info.get('categories', ['Uncategorized']),
-                "thumbnail": book_info.get('imageLinks', {}).get('thumbnail', None),
-            })
+            for item in data.get('items', []):
+                book_info = item.get('volumeInfo', {})
+                books.append({
+                    "title": book_info.get('title', 'No Title'),
+                    "authors": book_info.get('authors', ['Unknown Author']),
+                    "published_date": book_info.get('publishedDate', 'Unknown Date'),
+                    "description": book_info.get('description', 'No Description'),
+                    "page_count": book_info.get('pageCount', 0),
+                    "categories": book_info.get('categories', ['Uncategorized']),
+                    "thumbnail": book_info.get('imageLinks', {}).get('thumbnail', None),
+                })
 
-        if not books:
-            return JsonResponse({"error": "No books found from Google Books API."}, status=404)
+            next_page_token = data.get('nextPageToken')
+            if next_page_token:
+                api_url = f"https://www.googleapis.com/books/v1/volumes?q={query}&maxResults=40&pageToken={next_page_token}"
+            else:
+                api_url = None
 
-        return JsonResponse(books, safe=False)
+            if not books:
+                return JsonResponse({"error": "No books found from Google Books API."}, status=404)
 
-    except requests.RequestException as e:
-        return JsonResponse({"error": f"Failed to fetch books from Google API: {str(e)}"}, status=500)
+            return JsonResponse(books, safe=False)
+
+        except requests.RequestException as e:
+            return JsonResponse({"error": f"Failed to fetch books from Google API: {str(e)}"}, status=500)
 
 def fetch_and_add_book(request):
     title_query = request.GET.get('title', '').strip()
@@ -285,3 +295,127 @@ def fetch_and_add_book(request):
             'stock_quantity': book.stock_quantity,
         }
     }, status=201)
+
+def bulk_add_books(request):
+    query = request.GET.get('q', '').strip()  
+    if not query:
+        return JsonResponse({"error": "A search query is required."}, status=400)
+
+    max_books = 10000
+    total_books_added = 0 
+    books_to_create = []
+    author_name_to_author = {}
+
+    page = 1
+    while total_books_added < max_books:
+        start_index = (page - 1) * 40 
+        api_url = f"https://www.googleapis.com/books/v1/volumes?q={query}&maxResults=40&startIndex={start_index}"
+
+        try:
+            response = requests.get(api_url)
+            response.raise_for_status() 
+            data = response.json()
+
+            if not data.get('items'):
+                break
+
+            for item in data.get('items', []):
+                if total_books_added >= max_books:
+                    break 
+
+                book_info = item.get('volumeInfo', {})
+                title = book_info.get('title', 'No Title')
+                authors = book_info.get('authors', ['Unknown Author'])
+                published_date = book_info.get('publishedDate', 'Unknown Date')
+                description = book_info.get('description', 'No Description')
+                page_count = book_info.get('pageCount', 0)
+                categories = book_info.get('categories', ['Uncategorized'])
+                thumbnail = book_info.get('imageLinks', {}).get('thumbnail', None)
+
+                if Book.objects.filter(title=title).exists():
+                    continue
+
+                author_objects = []
+                for author_name in authors:
+                    author_name = author_name.strip()
+                    if author_name not in author_name_to_author:
+                        author, created = Author.objects.get_or_create(name=author_name)
+                        author_name_to_author[author_name] = author
+                    author_objects.append(author_name_to_author[author_name])
+
+
+                book = Book(
+                    title=title,
+                    price = 0.0, 
+                    stock_quantity = 10,
+                )
+                books_to_create.append(book)
+
+                total_books_added += 1  
+
+            if books_to_create:
+                try:
+                    if len(books_to_create) >= 1000:
+                        Book.objects.bulk_create(books_to_create[:1000])
+                        books_to_create = books_to_create[:1000]
+                    else:
+                        Book.objects.bulk_create(books_to_create)
+                        books_to_create = []
+
+                except IntegrityError as e:
+                    return JsonResponse({'error': str(e)}, status=500)
+
+            for book in books_to_create:
+                book = Book.objects.get(id=book.id)
+                for author in author_objects:
+                    book.authors.add(author)
+
+            books_to_create = []
+
+            #sleep(0.25)
+
+            if total_books_added >= max_books:
+                break
+
+            page += 1
+
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching data for page {page}: {e}")
+            continue
+
+    return JsonResponse({
+        'message': f'{total_books_added} books added successfully!',
+    }, status=201)
+
+
+def bulk_delete_books(request):
+    titles = request.GET.getlist('titles')
+    if not titles:
+        return JsonResponse({"error": "At least one title is required."}, status=400)
+
+    titles = [title.strip() for title in titles]
+
+    books_to_delete = Book.objects.filter(title__in=titles)
+
+    if not books_to_delete.exists():
+        return JsonResponse({"error": "No books found with the provided titles."}, status=404)
+
+    batch_size = 500  
+    deleted_count = 0
+
+    while True:
+        books_batch_ids = books_to_delete.values_list('id', flat=True)[:batch_size]
+        
+        if not books_batch_ids:
+            break
+        
+        deleted_batch_count, _ = Book.objects.filter(id__in=books_batch_ids).delete()
+
+        deleted_count += deleted_batch_count
+
+        if deleted_batch_count == 0:
+            break
+
+    return JsonResponse({
+        "message": f"{deleted_count} book(s) deleted successfully."
+    }, status=200)
