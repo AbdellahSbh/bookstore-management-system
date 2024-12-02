@@ -11,5 +11,6 @@ urlpatterns = [
     path('delete_book/', views.delete_book, name='delete_book'),
     path('fetch_google_books/', views.fetch_books_from_google, name='fetch_google_books'),
     path('fetch_and_add_book/', views.fetch_and_add_book, name='fetch_and_add_book'),
-
+    path('bulk_add_books/', views.bulk_add_books, name='bulk_add_books'),
+    path('bulk_delete_books/', views.bulk_delete_books, name='bulk_delete_books'),
 ]
