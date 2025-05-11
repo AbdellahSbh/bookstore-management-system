@@ -8,6 +8,11 @@ The Virtual Safari system is designed to be a web application ran by using comma
 - Python (Django) backend for business logic
 - SQLite database for data storage
 
+## Project Overview
+
+Abdellah Sabhi
+Laurent Bialylew
+
 ## Software Dependencies
 
 ### Git
