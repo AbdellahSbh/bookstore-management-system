@@ -58,6 +58,8 @@ bookstore-management-system/
 ├── inventory/               # App content
 ├── readers_haven/           # Django app settings
 ├── manage.py                # To run the program
+├── UML Diagrams             # UML Diagrams of this project
+├── Slides                   # Weekly presentations on the project
 └── README.md                # This file
 ```
 
