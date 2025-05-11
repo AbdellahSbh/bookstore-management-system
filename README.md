@@ -11,6 +11,7 @@ The Virtual Safari system is designed to be a web application ran by using comma
 ## Project Overview
 
 Abdellah Sabhi
+
 Laurent Bialylew
 
 ## Software Dependencies
